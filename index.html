@@ -173,10 +173,6 @@
     <div class="empty-hist" id="histEmpty">עדיין אין חישובים שמורים</div>
   </section>
 
-  <footer>
-    הגובה הוא גובה לחץ (FL) · IAS ≈ CAS (ללא תיקון שגיאת מיקום)<br>
-    Mach תלוי ב-IAS וב-FL בלבד. ה-ISA משפיע על TAS, על הטמפרטורה ועל מהירות הקול.
-  </footer>
 </main>
 
 <script>
@@ -302,12 +298,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js').then(function (reg) {
-      var el = document.getElementById('offline');
-      function ready() { el.textContent = '● זמין אופליין'; el.style.color = 'var(--accent)'; }
-      if (navigator.serviceWorker.controller) ready();
-      else navigator.serviceWorker.addEventListener('controllerchange', ready);
-    }).catch(function () {});
+    navigator.serviceWorker.register('sw.js').catch(function () {});
   });
 }
 </script>
