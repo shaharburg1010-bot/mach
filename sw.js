@@ -1,6 +1,7 @@
-// Service Worker: saves all app files on the device on first visit, then serves them offline.
-// To push an update: change VERSION, upload again.
-const VERSION = 'mach-v1';
+// Service Worker: saves all app files on the device on first visit, so the app works offline.
+// Updates arrive automatically whenever the app is opened with internet (network first).
+// VERSION only needs changing if the list of FILES below changes.
+const VERSION = 'mach-v2';
 const FILES = [
   './',
   './index.html',
@@ -23,10 +24,17 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// Cache first: answer from the device; go to the network only for things not saved.
+// Network first: with internet, always fetch the newest file and refresh the saved copy.
+// Without internet (or if the network fails), fall back to the copy saved on the device.
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    caches.match(e.request, { ignoreSearch: true }).then((hit) => hit || fetch(e.request))
+    fetch(e.request)
+      .then((res) => {
+        const copy = res.clone();
+        caches.open(VERSION).then((c) => c.put(e.request, copy));
+        return res;
+      })
+      .catch(() => caches.match(e.request, { ignoreSearch: true }))
   );
 });

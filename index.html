@@ -90,6 +90,19 @@
   .row .v small { color: var(--muted); font-size: 14px; margin-left: 4px; }
 
   footer { font-size: 12px; color: var(--muted); line-height: 1.6; text-align: center; }
+  .save-btn { width: 100%; margin-top: 16px; padding: 14px; border: 1.5px solid var(--accent); border-radius: 12px; background: transparent; color: var(--accent); font-family: var(--sans); font-size: 17px; font-weight: 600; cursor: pointer; }
+  .save-btn:disabled { border-color: var(--line); color: var(--line); cursor: default; }
+  .history-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .history-head h2 { margin: 0; }
+  .clear-btn { background: none; border: 0; color: var(--muted); font-size: 14px; cursor: pointer; padding: 6px; }
+  .hist { width: 100%; border-collapse: collapse; direction: ltr; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .hist th { font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--muted); text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  .hist td { font-size: 17px; padding: 12px 6px; border-bottom: 1px solid var(--line); }
+  .hist tr:last-child td { border-bottom: 0; }
+  .hist tbody tr { cursor: pointer; }
+  .hist td.m { color: var(--accent); font-weight: 600; }
+  .hist td.t { color: var(--muted); font-size: 14px; }
+  .empty-hist { color: var(--muted); font-size: 14px; text-align: center; padding: 14px 0; }
   .noscript { background: var(--err); color: #fff; padding: 14px; border-radius: 12px; text-align: center; font-size: 15px; }
 </style>
 </head>
@@ -144,13 +157,26 @@
         <div class="row"><span class="k">טמפרטורה בגובה (SAT)</span><span class="v" id="sat">—<small>°C</small></span></div>
         <div class="row"><span class="k">מהירות הקול</span><span class="v" id="sos">—<small>KT</small></span></div>
       </div>
+      <button type="button" class="save-btn" id="save" disabled>שמור להיסטוריה</button>
     </section>
   </div>
 
-  <div id="offline" class="model" style="text-align:center"></div>
+  <section class="card" aria-label="היסטוריית חישובים">
+    <div class="history-head">
+      <h2>היסטוריה · 10 מקטעים אחרונים</h2>
+      <button type="button" class="clear-btn" id="clearHist">נקה</button>
+    </div>
+    <table class="hist">
+      <thead><tr><th>#</th><th>IAS</th><th>FL</th><th>ISA</th><th>MACH</th><th>TAS</th><th>שעה</th></tr></thead>
+      <tbody id="histBody"></tbody>
+    </table>
+    <div class="empty-hist" id="histEmpty">עדיין אין חישובים שמורים</div>
+  </section>
+
+  <div id="offline" style="text-align:center; font-size:13px; color:var(--muted)"></div>
 
   <footer>
-    אטמוספרה סטנדרטית ICAO · הגובה הוא גובה לחץ (FL) · IAS ≈ CAS (ללא תיקון שגיאת מיקום)<br>
+    הגובה הוא גובה לחץ (FL) · IAS ≈ CAS (ללא תיקון שגיאת מיקום)<br>
     Mach תלוי ב-IAS וב-FL בלבד. ה-ISA משפיע על TAS, על הטמפרטורה ועל מהירות הקול.
   </footer>
 </main>
@@ -180,6 +206,9 @@
   var $ = function (id) { return document.getElementById(id); };
   var ias = $('ias'), fl = $('fl'), segBtns = document.querySelectorAll('.seg button');
   var isaDev = 0;
+  var last = null;              // the last valid calculation, waiting to be saved
+  var HIST_KEY = 'mach-history';
+  var HIST_MAX = 10;
 
   function num(el) {
     var v = el.value.replace(',', '.').trim();
@@ -198,11 +227,14 @@
     var fBad = fl.value !== '' && !(f >= 0 && f <= 600);
     ias.classList.toggle('bad', iBad); fl.classList.toggle('bad', fBad);
 
+    last = null; $('save').disabled = true;
     if (isNaN(i) || isNaN(f)) return clear('');
     if (iBad) return clear('IAS צריך להיות בין 40 ל-700 קשר');
     if (fBad) return clear('FL צריך להיות בין 0 ל-600');
 
     var r = calcMach(i, f, isaDev);
+    last = { ias: i, fl: f, isa: isaDev, mach: r.mach, tas: r.tas };
+    $('save').disabled = false;
     var m = $('mach');
     m.textContent = r.mach.toFixed(3); m.classList.remove('empty');
     setVal('tas', Math.round(r.tas), 'KT');
@@ -210,6 +242,47 @@
     setVal('sos', Math.round(r.sos), 'KT');
     $('msg').textContent = r.mach >= 1 ? 'מעל Mach 1 – הנוסחה תקפה למהירות תת-קולית בלבד' : '';
   }
+
+  // ---- History (stored on this device only, in localStorage) ----
+  function loadHist() {
+    try { return JSON.parse(localStorage.getItem(HIST_KEY)) || []; } catch (e) { return []; }
+  }
+  function saveHist(list) {
+    try { localStorage.setItem(HIST_KEY, JSON.stringify(list)); } catch (e) {}
+  }
+  function hhmm(ts) {
+    var d = new Date(ts);
+    return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  }
+  function renderHist() {
+    var list = loadHist(), body = $('histBody'), html = '';
+    for (var n = 0; n < list.length; n++) {
+      var h = list[n];
+      html += '<tr data-n="' + n + '"><td class="t">' + (n + 1) + '</td><td>' + h.ias + '</td><td>' + h.fl +
+              '</td><td>+' + h.isa + '</td><td class="m">' + h.mach.toFixed(3) + '</td><td>' + Math.round(h.tas) +
+              '</td><td class="t">' + hhmm(h.ts) + '</td></tr>';
+    }
+    body.innerHTML = html;
+    $('histEmpty').style.display = list.length ? 'none' : 'block';
+    $('clearHist').style.visibility = list.length ? 'visible' : 'hidden';
+  }
+  $('save').addEventListener('click', function () {
+    if (!last) return;
+    var list = loadHist();
+    list.unshift({ ias: last.ias, fl: last.fl, isa: last.isa, mach: last.mach, tas: last.tas, ts: Date.now() });
+    saveHist(list.slice(0, HIST_MAX));   // keep only the 10 newest
+    renderHist();
+  });
+  $('clearHist').addEventListener('click', function () { saveHist([]); renderHist(); });
+  // Tap a row -> load that leg back into the inputs
+  $('histBody').addEventListener('click', function (e) {
+    var tr = e.target.closest('tr'); if (!tr) return;
+    var h = loadHist()[Number(tr.getAttribute('data-n'))]; if (!h) return;
+    ias.value = h.ias; fl.value = h.fl;
+    var btn = document.querySelector('.seg button[data-dev="' + h.isa + '"]');
+    if (btn) btn.click(); else update();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
 
   ias.addEventListener('input', update);
   fl.addEventListener('input', update);
@@ -224,6 +297,7 @@
     el.addEventListener('keydown', function (e) { if (e.key === 'Enter') el.blur(); });
   });
   update();
+  renderHist();
 })();
 </script>
 
