@@ -80,12 +80,17 @@
   .mach-box { text-align: center; padding: 22px 10px 24px; margin-bottom: 16px; border-radius: 16px;
     background: radial-gradient(ellipse at center, rgba(61,220,151,.18), rgba(61,220,151,.04) 72%);
     border: 1.5px solid rgba(61,220,151,.4); }
-  .mach-label { font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: .24em; }
+  .mach-label { font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: .08em; }
   .mach { font-family: var(--mono); font-size: clamp(84px, 11.5vw, 124px); font-weight: 700; line-height: 1.02; color: var(--accent); direction: ltr; font-variant-numeric: tabular-nums; text-shadow: 0 0 32px rgba(61,220,151,.38); }
   .mach.empty { color: var(--line); text-shadow: none; }
   .sub-label { font-size: 13px; color: var(--muted); letter-spacing: .12em; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(61,220,151,.25); }
   .sub { font-family: var(--mono); font-size: 52px; font-weight: 600; line-height: 1.1; direction: ltr; font-variant-numeric: tabular-nums; }
   .sub small { font-size: 18px; color: var(--muted); margin-left: 6px; font-weight: 500; }
+  /* Mach -> IAS: show only the required IAS, as the big number */
+  .mach-box.rev .mach-label, .mach-box.rev #mach { display: none; }
+  .mach-box.rev .sub-label { margin-top: 0; padding-top: 0; border-top: 0; font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: .08em; }
+  .mach-box.rev .sub { font-size: clamp(84px, 11.5vw, 124px); font-weight: 700; line-height: 1.02; color: var(--accent); text-shadow: 0 0 32px rgba(61,220,151,.38); }
+  .mach-box.rev .sub small { font-size: 26px; text-shadow: none; }
   .mode { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 5px; direction: rtl; }
   .mode button { font-family: var(--mono); font-size: 18px; font-weight: 600; letter-spacing: .04em; color: var(--muted); background: transparent; border: 0; border-radius: 10px; padding: 14px 0; cursor: pointer; }
   .mode button[aria-pressed="true"] { background: var(--panel-2); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
@@ -170,7 +175,7 @@
 
     <section class="card result" aria-label="תוצאה" aria-live="polite">
       <h2>תוצאה</h2>
-      <div class="mach-box">
+      <div class="mach-box" id="machBox">
         <div class="mach-label">MACH</div>
         <div class="mach empty" id="mach">0.000</div>
         <div class="hidden" id="iasOut">
@@ -314,6 +319,7 @@
     $('machField').classList.toggle('hidden', !rev);
     $('iasField').classList.toggle('hidden', rev);
     $('iasOut').classList.toggle('hidden', !rev);
+    $('machBox').classList.toggle('rev', rev);
     $('modelTag').textContent = rev ? 'ISA · Mach → CAS' : 'ISA · CAS → Mach';
     for (var j = 0; j < modeBtns.length; j++)
       modeBtns[j].setAttribute('aria-pressed', modeBtns[j].getAttribute('data-mode') === mode ? 'true' : 'false');
