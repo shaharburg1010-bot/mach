@@ -25,11 +25,13 @@ self.addEventListener('activate', (e) => {
 });
 
 // Network first: with internet, always fetch the newest file and refresh the saved copy.
+// cache: 'no-cache' makes the browser check with the server every time, instead of reusing
+// its own short-lived HTTP cache, so a new version shows up as soon as GitHub Pages has it.
 // Without internet (or if the network fails), fall back to the copy saved on the device.
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then((res) => {
         const copy = res.clone();
         caches.open(VERSION).then((c) => c.put(e.request, copy));
