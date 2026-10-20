@@ -77,10 +77,20 @@
   .seg button[aria-pressed="true"] { background: var(--accent); color: #062417; font-weight: 700; }
 
   .result { display: flex; flex-direction: column; }
-  .mach-box { text-align: center; padding: 18px 0 22px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
-  .mach-label { font-size: 13px; color: var(--muted); letter-spacing: .12em; }
-  .mach { font-family: var(--mono); font-size: 92px; font-weight: 600; line-height: 1.05; color: var(--accent); direction: ltr; font-variant-numeric: tabular-nums; }
-  .mach.empty { color: var(--line); }
+  .mach-box { text-align: center; padding: 22px 10px 24px; margin-bottom: 16px; border-radius: 16px;
+    background: radial-gradient(ellipse at center, rgba(61,220,151,.18), rgba(61,220,151,.04) 72%);
+    border: 1.5px solid rgba(61,220,151,.4); }
+  .mach-label { font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: .24em; }
+  .mach { font-family: var(--mono); font-size: clamp(84px, 11.5vw, 124px); font-weight: 700; line-height: 1.02; color: var(--accent); direction: ltr; font-variant-numeric: tabular-nums; text-shadow: 0 0 32px rgba(61,220,151,.38); }
+  .mach.empty { color: var(--line); text-shadow: none; }
+  .sub-label { font-size: 13px; color: var(--muted); letter-spacing: .12em; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(61,220,151,.25); }
+  .sub { font-family: var(--mono); font-size: 52px; font-weight: 600; line-height: 1.1; direction: ltr; font-variant-numeric: tabular-nums; }
+  .sub small { font-size: 18px; color: var(--muted); margin-left: 6px; font-weight: 500; }
+  .mode { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 5px; direction: ltr; }
+  .mode button { font-family: var(--mono); font-size: 18px; font-weight: 600; letter-spacing: .04em; color: var(--muted); background: transparent; border: 0; border-radius: 10px; padding: 14px 0; cursor: pointer; }
+  .mode button[aria-pressed="true"] { background: var(--panel-2); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  input.mach-in { color: var(--accent); font-size: 44px; font-weight: 700; border-color: rgba(61,220,151,.45); }
+  .hidden { display: none !important; }
   .msg { min-height: 20px; font-size: 14px; color: var(--warn); margin-top: 6px; }
   .rows { display: grid; gap: 2px; }
   .row { display: flex; justify-content: space-between; align-items: baseline; padding: 11px 2px; border-bottom: 1px solid var(--line); }
@@ -112,14 +122,27 @@
 
   <header>
     <h1>מחשבון <span>MACH</span></h1>
-    <div class="model">ISA · CAS → Mach</div>
+    <div class="model" id="modelTag">ISA · CAS → Mach</div>
   </header>
+
+  <div class="mode" role="group" aria-label="כיוון חישוב">
+    <button type="button" data-mode="fwd" aria-pressed="true">IAS → MACH</button>
+    <button type="button" data-mode="rev" aria-pressed="false">MACH → IAS</button>
+  </div>
 
   <div class="grid">
     <section class="card" aria-label="נתונים">
       <h2>נתונים</h2>
 
-      <div class="field">
+      <div class="field hidden" id="machField">
+        <div class="label"><span>Mach Number</span><small>M</small></div>
+        <div class="input-wrap">
+          <span class="prefix">M</span>
+          <input id="machIn" class="has-prefix mach-in" inputmode="decimal" autocomplete="off" placeholder="0.780" aria-label="Mach number">
+        </div>
+      </div>
+
+      <div class="field" id="iasField">
         <div class="label"><span>Indicated Airspeed</span><small>IAS</small></div>
         <div class="input-wrap">
           <input id="ias" inputmode="decimal" autocomplete="off" placeholder="300" aria-label="IAS in knots">
@@ -150,6 +173,10 @@
       <div class="mach-box">
         <div class="mach-label">MACH</div>
         <div class="mach empty" id="mach">0.000</div>
+        <div class="hidden" id="iasOut">
+          <div class="sub-label">IAS נדרש</div>
+          <div class="sub" id="iasRes">—<small>KT</small></div>
+        </div>
         <div class="msg" id="msg"></div>
       </div>
       <div class="rows">
@@ -173,6 +200,12 @@
     <div class="empty-hist" id="histEmpty">עדיין אין חישובים שמורים</div>
   </section>
 
+  <div id="offline" style="text-align:center; font-size:13px; color:var(--muted)"></div>
+
+  <footer>
+    הגובה הוא גובה לחץ (FL) · IAS ≈ CAS (ללא תיקון שגיאת מיקום)<br>
+    הקשר בין Mach ל-IAS תלוי ב-FL בלבד. ה-ISA משפיע על TAS, על הטמפרטורה ועל מהירות הקול.
+  </footer>
 </main>
 
 <script>
@@ -187,54 +220,108 @@
     return m <= 11000 ? P0 * Math.pow(1 - 2.25577e-5 * m, 5.25588)
                       : 22632.06 * Math.exp(-(m - 11000) / 6341.62);
   }
+  function extras(mach, altFt, isaDev) {
+    var tempK = stdTempK(altFt) + isaDev;
+    var a = A_PER_SQRT_K * Math.sqrt(tempK);
+    return { tas: mach * a, satC: tempK - 273.15, sos: a };
+  }
+  // IAS (=CAS) -> Mach
   function calcMach(iasKt, fl, isaDev) {
     var altFt = fl * 100;
     var qc = P0 * (Math.pow(1 + 0.2 * Math.pow(iasKt / A0_KT, 2), 3.5) - 1);
     var mach = Math.sqrt(5 * (Math.pow(qc / pressurePa(altFt) + 1, 2 / 7) - 1));
-    var tempK = stdTempK(altFt) + isaDev;
-    var a = A_PER_SQRT_K * Math.sqrt(tempK);
-    return { mach: mach, tas: mach * a, satC: tempK - 273.15, sos: a };
+    var r = extras(mach, altFt, isaDev); r.mach = mach; r.ias = iasKt;
+    return r;
+  }
+  // Mach -> IAS (=CAS): exact inverse of calcMach
+  function calcIas(mach, fl, isaDev) {
+    var altFt = fl * 100;
+    var qc = pressurePa(altFt) * (Math.pow(1 + 0.2 * mach * mach, 3.5) - 1);
+    var cas = A0_KT * Math.sqrt(5 * (Math.pow(qc / P0 + 1, 2 / 7) - 1));
+    var r = extras(mach, altFt, isaDev); r.mach = mach; r.ias = cas;
+    return r;
   }
 
   // ---- UI ----
   var $ = function (id) { return document.getElementById(id); };
-  var ias = $('ias'), fl = $('fl'), segBtns = document.querySelectorAll('.seg button');
+  var ias = $('ias'), fl = $('fl'), machIn = $('machIn');
+  var segBtns = document.querySelectorAll('.seg button');
+  var modeBtns = document.querySelectorAll('.mode button');
   var isaDev = 0;
+  var mode = 'fwd';             // 'fwd' = IAS -> Mach, 'rev' = Mach -> IAS
   var last = null;              // the last valid calculation, waiting to be saved
-  var HIST_KEY = 'mach-history';
+  var HIST_KEY = 'mach-history', MODE_KEY = 'mach-mode';
   var HIST_MAX = 10;
 
   function num(el) {
     var v = el.value.replace(',', '.').trim();
+    if (v.charAt(0) === '.') v = '0' + v;
     return v === '' ? NaN : Number(v);
   }
   function setVal(id, text, unit) { $(id).innerHTML = text + '<small>' + unit + '</small>'; }
   function clear(msg) {
     $('mach').textContent = '0.000'; $('mach').classList.add('empty');
     setVal('tas', '—', 'KT'); setVal('sat', '—', '°C'); setVal('sos', '—', 'KT');
+    setVal('iasRes', '—', 'KT');
     $('msg').textContent = msg || '';
   }
 
   function update() {
-    var i = num(ias), f = num(fl);
-    var iBad = ias.value !== '' && !(i >= 40 && i <= 700);
+    var f = num(fl);
     var fBad = fl.value !== '' && !(f >= 0 && f <= 600);
-    ias.classList.toggle('bad', iBad); fl.classList.toggle('bad', fBad);
-
+    fl.classList.toggle('bad', fBad);
     last = null; $('save').disabled = true;
-    if (isNaN(i) || isNaN(f)) return clear('');
-    if (iBad) return clear('IAS צריך להיות בין 40 ל-700 קשר');
-    if (fBad) return clear('FL צריך להיות בין 0 ל-600');
 
-    var r = calcMach(i, f, isaDev);
-    last = { ias: i, fl: f, isa: isaDev, mach: r.mach, tas: r.tas };
+    var r;
+    if (mode === 'fwd') {
+      var i = num(ias);
+      var iBad = ias.value !== '' && !(i >= 40 && i <= 700);
+      ias.classList.toggle('bad', iBad); machIn.classList.remove('bad');
+      if (isNaN(i) || isNaN(f)) return clear('');
+      if (iBad) return clear('IAS צריך להיות בין 40 ל-700 קשר');
+      if (fBad) return clear('FL צריך להיות בין 0 ל-600');
+      r = calcMach(i, f, isaDev);
+    } else {
+      var mm = num(machIn);
+      var mBad = machIn.value !== '' && !(mm >= 0.1 && mm <= 0.99);
+      machIn.classList.toggle('bad', mBad); ias.classList.remove('bad');
+      if (isNaN(mm) || isNaN(f)) return clear('');
+      if (mBad) return clear('Mach צריך להיות בין 0.10 ל-0.99');
+      if (fBad) return clear('FL צריך להיות בין 0 ל-600');
+      r = calcIas(mm, f, isaDev);
+    }
+
+    last = { mode: mode, ias: r.ias, fl: f, isa: isaDev, mach: r.mach, tas: r.tas };
     $('save').disabled = false;
     var m = $('mach');
     m.textContent = r.mach.toFixed(3); m.classList.remove('empty');
+    setVal('iasRes', Math.round(r.ias), 'KT');
     setVal('tas', Math.round(r.tas), 'KT');
     setVal('sat', (r.satC > 0 ? '+' : '') + r.satC.toFixed(1), '°C');
     setVal('sos', Math.round(r.sos), 'KT');
     $('msg').textContent = r.mach >= 1 ? 'מעל Mach 1 – הנוסחה תקפה למהירות תת-קולית בלבד' : '';
+  }
+
+  // ---- Mode switch (IAS -> Mach / Mach -> IAS) ----
+  function setMode(newMode, carry) {
+    if (carry && last && newMode !== mode) {
+      // keep the same flight condition when flipping direction
+      if (newMode === 'rev') machIn.value = last.mach.toFixed(3);
+      else ias.value = Math.round(last.ias);
+    }
+    mode = newMode;
+    var rev = mode === 'rev';
+    $('machField').classList.toggle('hidden', !rev);
+    $('iasField').classList.toggle('hidden', rev);
+    $('iasOut').classList.toggle('hidden', !rev);
+    $('modelTag').textContent = rev ? 'ISA · Mach → CAS' : 'ISA · CAS → Mach';
+    for (var j = 0; j < modeBtns.length; j++)
+      modeBtns[j].setAttribute('aria-pressed', modeBtns[j].getAttribute('data-mode') === mode ? 'true' : 'false');
+    try { localStorage.setItem(MODE_KEY, mode); } catch (e) {}
+    update();
+  }
+  for (var q = 0; q < modeBtns.length; q++) {
+    modeBtns[q].addEventListener('click', function () { setMode(this.getAttribute('data-mode'), true); });
   }
 
   // ---- History (stored on this device only, in localStorage) ----
@@ -251,8 +338,8 @@
   function renderHist() {
     var list = loadHist(), body = $('histBody'), html = '';
     for (var n = 0; n < list.length; n++) {
-      var h = list[n];
-      html += '<tr data-n="' + n + '"><td class="t">' + (n + 1) + '</td><td>' + h.ias + '</td><td>' + h.fl +
+      var h = list[n], rev = h.mode === 'rev';
+      html += '<tr data-n="' + n + '"><td class="t">' + (n + 1) + (rev ? ' ↺' : '') + '</td><td>' + Math.round(h.ias) + '</td><td>' + h.fl +
               '</td><td>+' + h.isa + '</td><td class="m">' + h.mach.toFixed(3) + '</td><td>' + Math.round(h.tas) +
               '</td><td class="t">' + hhmm(h.ts) + '</td></tr>';
     }
@@ -263,22 +350,26 @@
   $('save').addEventListener('click', function () {
     if (!last) return;
     var list = loadHist();
-    list.unshift({ ias: last.ias, fl: last.fl, isa: last.isa, mach: last.mach, tas: last.tas, ts: Date.now() });
+    list.unshift({ mode: last.mode, ias: last.ias, fl: last.fl, isa: last.isa, mach: last.mach, tas: last.tas, ts: Date.now() });
     saveHist(list.slice(0, HIST_MAX));   // keep only the 10 newest
     renderHist();
   });
   $('clearHist').addEventListener('click', function () { saveHist([]); renderHist(); });
-  // Tap a row -> load that leg back into the inputs
+  // Tap a row -> load that leg back, in the direction it was calculated
   $('histBody').addEventListener('click', function (e) {
     var tr = e.target.closest('tr'); if (!tr) return;
     var h = loadHist()[Number(tr.getAttribute('data-n'))]; if (!h) return;
-    ias.value = h.ias; fl.value = h.fl;
-    var btn = document.querySelector('.seg button[data-dev="' + h.isa + '"]');
-    if (btn) btn.click(); else update();
+    fl.value = h.fl;
+    if (h.mode === 'rev') machIn.value = h.mach.toFixed(3); else ias.value = Math.round(h.ias);
+    isaDev = h.isa;
+    for (var j = 0; j < segBtns.length; j++)
+      segBtns[j].setAttribute('aria-pressed', Number(segBtns[j].getAttribute('data-dev')) === h.isa ? 'true' : 'false');
+    setMode(h.mode === 'rev' ? 'rev' : 'fwd', false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
   ias.addEventListener('input', update);
+  machIn.addEventListener('input', update);
   fl.addEventListener('input', update);
   for (var k = 0; k < segBtns.length; k++) {
     segBtns[k].addEventListener('click', function () {
@@ -287,10 +378,13 @@
       update();
     });
   }
-  [ias, fl].forEach(function (el) {
+  [ias, fl, machIn].forEach(function (el) {
     el.addEventListener('keydown', function (e) { if (e.key === 'Enter') el.blur(); });
   });
-  update();
+
+  var saved = 'fwd';
+  try { saved = localStorage.getItem(MODE_KEY) === 'rev' ? 'rev' : 'fwd'; } catch (e) {}
+  setMode(saved, false);
   renderHist();
 })();
 </script>
@@ -298,7 +392,12 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js').catch(function () {});
+    navigator.serviceWorker.register('sw.js').then(function (reg) {
+      var el = document.getElementById('offline');
+      function ready() { el.textContent = '● זמין אופליין'; el.style.color = 'var(--accent)'; }
+      if (navigator.serviceWorker.controller) ready();
+      else navigator.serviceWorker.addEventListener('controllerchange', ready);
+    }).catch(function () {});
   });
 }
 </script>
